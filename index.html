@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ka" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>AvmaDrive</title>
+    <meta name="theme-color" content="#4f46e5">
+        <link rel="stylesheet" href="assets/css/inter.css?v=2">
+    <link rel="stylesheet" href="assets/css/fontawesome.css?v=2">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=2">
+    <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sel-box { opacity: 0; transition: opacity .15s; }
+        .sel-card:hover .sel-box, body.sel-active .sel-box, .sel-box.is-on { opacity: 1; }
+        /* touch screens: tick boxes appear only while selecting (long-press a tile), star only when set */
+        @media (hover: none) {
+            .sel-box { opacity: 0; }
+            body.sel-active .sel-box, .sel-box.is-on { opacity: 1; }
+            .fav-btn.absolute.text-white\/70 { display: none; }
+            [class*="group-hover:scale"] { transform: none !important; }
+            .transition, .transition-all { transition-duration: 0s; }
+            #foldersContainer { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        }
+        /* phones and tablets: no blur layers (very costly on mobile GPUs) */
+        @media (max-width: 767px), (hover: none) {
+            .backdrop-blur-md, .backdrop-blur-sm { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+        }
+        @media (max-width: 767px) { #galleryTools { display: none !important; } }
+        html, body { height: 100%; }
+        @supports (height: 100dvh) { html, body { height: 100dvh; } }
+        #moreMenu button { width: 100%; display: flex; align-items: center; gap: .75rem; padding: .625rem 1rem; font-size: .875rem; text-align: left; }
+        #moreMenu button i { width: 1.25rem; text-align: center; }
+        /* scrollbar of the sidebar: thin and visible only on hover */
+        .sb-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+        .sb-scroll:hover { scrollbar-color: rgba(156,163,175,.55) transparent; }
+        .sb-scroll::-webkit-scrollbar-thumb { background: transparent; }
+        .sb-scroll:hover::-webkit-scrollbar-thumb { background: rgba(156,163,175,.55); }
+        @media (max-width: 767px) { .sb-scroll { scrollbar-width: none; } .sb-scroll::-webkit-scrollbar { display: none; } }
+        @media (min-width: 768px) {
+            #sidebar.collapsed { width: 5rem; }
+            #sidebar.collapsed .sb-hide, #sidebar.collapsed .sb-label { display: none; }
+            #sidebar.collapsed a span { display: none; }
+            #sidebar.collapsed a { justify-content: center; }
+            #sidebar.collapsed .sb-actions { flex-direction: column; }
+            #sidebar.collapsed #sidebarToggleIcon { transform: rotate(180deg); }
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 12px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.8); }
+    </style>
+
+</head>
+<body class="h-full bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 transition-colors duration-300 flex overflow-hidden">
+
+    <aside id="sidebar" class="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col z-20 transition-all duration-300 -translate-x-full md:translate-x-0 absolute md:relative h-full">
+        <div class="group h-16 px-5 flex-shrink-0 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+            <div class="flex items-center space-x-3">
+                <button type="button" onclick="toggleSidebarCollapse()" id="sidebarToggleLogo" data-tip="მენიუს დაკეცვა" data-tip-always class="relative w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 flex items-center justify-center text-white flex-shrink-0 cursor-pointer transition">
+                    <i class="fa-solid fa-hard-drive group-hover:hidden"></i>
+                    <i id="sidebarToggleIcon" class="fa-solid fa-angles-left hidden group-hover:inline"></i>
+                </button>
+                <span class="sb-label font-bold text-lg tracking-tight text-slate-900 dark:text-white">AvmaDrive</span>
+            </div>
+            <button onclick="toggleMobileSidebar()" class="md:hidden text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+        </div>
+
+        <div class="sb-scroll flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 space-y-6">
+            <div>
+                <div class="sb-hide text-[11px] font-semibold uppercase tracking-wider text-slate-400 px-3 mb-2">მთავარი</div>
+                <div class="space-y-1">
+                    <a href="#" data-tip="ყველა ფოლდერი" onclick="filterCategory('all', event)" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-indigo-50 text-indigo-600 dark:bg-indigo-950/55 dark:text-indigo-400 transition">
+                        <i class="fa-solid fa-folder-open w-5"></i>
+                        <span>ყველა ფოლდერი</span>
+                    </a>
+                    <a href="#" id="favNavLink" data-tip="ფავორიტები" onclick="showFavorites(event)" class="flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                        <i class="fa-solid fa-star w-5 text-amber-400"></i>
+                        <span class="flex-1">ფავორიტები</span>
+                        <span id="favNavCount" class="sb-hide text-[11px] text-slate-400">0</span>
+                    </a>
+                </div>
+            </div>
+
+            <div>
+                <div class="sb-hide flex items-center justify-between px-3 mb-2">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">კატეგორიები</span>
+                    <button onclick="openCategoryModal()" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 text-xs font-medium flex items-center space-x-1 cursor-pointer">
+                        <i class="fa-solid fa-plus"></i> <span>ახალი</span>
+                    </button>
+                </div>
+                <div id="categoriesListContainer" class="space-y-1"></div>
+            </div>
+
+            <div class="sb-hide">
+                <div class="flex items-center justify-between px-3 mb-2">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">ადამიანების ტეგები</span>
+                </div>
+                <div id="tagsListContainer" class="space-y-1"></div>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-slate-100 dark:border-slate-800">
+            <div class="sb-hide mb-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
+                <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1.5">
+                    <span>სულ საქაღალდე</span>
+                    <span id="folder-count-badge">0</span>
+                </div>
+                <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-xl overflow-hidden">
+                    <div id="storageBar" class="bg-indigo-600 h-full rounded-xl transition-all duration-500" style="width: 10%"></div>
+                </div>
+            </div>
+            <div class="sb-actions flex gap-2">
+                <button type="button" onclick="exportData()" data-tip="მონაცემების ექსპორტი (JSON)" data-tip-always class="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                    <i class="fa-solid fa-file-export"></i><span class="sb-label">ექსპორტი</span>
+                </button>
+                <button type="button" onclick="document.getElementById('dataImportInput').click()" data-tip="მონაცემების იმპორტი (JSON)" data-tip-always class="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                    <i class="fa-solid fa-file-import"></i><span class="sb-label">იმპორტი</span>
+                </button>
+                <input type="file" id="dataImportInput" accept=".json,application/json" class="hidden" onchange="handleDataImport(event)">
+            </div>
+            <button type="button" id="backupBtn" onclick="openBackupDialog()" data-tip="ავტომატური ბექაპი" data-tip-always class="hidden mt-2 w-full items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                <i class="fa-solid fa-shield-halved"></i><span class="sb-label">ავტო-ბექაპი</span><span id="backupDot" class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+            </button>
+        </div>
+    </aside>
+
+    <div id="guideModal" class="fixed inset-0 z-[85] bg-slate-900/60 backdrop-blur-sm hidden items-center justify-center p-4" onclick="if(event.target===this)closeGuide()">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-2rem)]">
+            <div class="relative bg-slate-100 dark:bg-slate-800 h-56 sm:h-80 flex-shrink-0 overflow-hidden">
+                <img id="guideImg" alt="" class="w-full h-full object-cover object-left-top">
+                <button type="button" onclick="closeGuide()" title="დახურვა (Esc)" class="absolute top-3 right-3 w-9 h-9 rounded-xl bg-slate-900/70 hover:bg-slate-900 text-white flex items-center justify-center cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-6 space-y-2 overflow-y-auto">
+                <div id="guideStep" class="text-xs font-semibold text-indigo-600 dark:text-indigo-400"></div>
+                <h3 id="guideTitle" class="font-bold text-xl text-slate-900 dark:text-white"></h3>
+                <p id="guideText" class="text-sm leading-relaxed text-slate-600 dark:text-slate-300"></p>
+            </div>
+            <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                <label class="flex items-center space-x-2 text-xs text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                    <input type="checkbox" id="guideOff" class="w-4 h-4 rounded accent-indigo-600">
+                    <span>აღარ გამოჩნდეს</span>
+                </label>
+                <div id="guideDots" class="flex items-center gap-1.5"></div>
+                <div class="flex items-center gap-2">
+                    <button type="button" id="guidePrev" onclick="guideGo(-1)" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">უკან</button>
+                    <button type="button" id="guideNext" onclick="guideGo(1)" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer">შემდეგი</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="selBar" class="hidden fixed bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 items-center gap-0.5 sm:gap-1 bg-slate-900 text-white rounded-xl shadow-2xl border border-white/10 px-2 py-2 max-w-[calc(100vw-1rem)]">
+        <span id="selCount" class="px-2 sm:px-3 text-sm font-medium whitespace-nowrap"></span>
+        <button type="button" onclick="selectAllVisible()" class="px-3 py-2 rounded-xl text-xs font-medium text-slate-300 hover:bg-white/10 transition cursor-pointer whitespace-nowrap">ყველა</button>
+        <div class="w-px h-5 bg-white/15"></div>
+        <button type="button" onclick="openBulkTag('add')" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-tag sm:mr-1.5 text-indigo-400"></i><span class="hidden sm:inline">ტეგის დამატება</span></button>
+        <button type="button" onclick="openBulkTag('remove')" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-tag sm:mr-1.5 text-rose-400"></i><span class="hidden sm:inline">მოხსნა</span></button>
+        <div class="w-px h-5 bg-white/15"></div>
+        <button type="button" onclick="deleteSelected()" title="ბიბლიოთეკიდან წაშლა (Delete). დისკზე ფაილები არ იშლება" class="px-3 py-2 rounded-xl text-xs font-medium text-rose-300 hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1.5"></i><span class="hidden sm:inline">წაშლა</span></button>
+        <div class="w-px h-5 bg-white/15"></div>
+        <button type="button" onclick="clearSelection()" title="მონიშვნის გაუქმება (Esc)" class="w-9 h-9 rounded-xl text-slate-300 hover:bg-white/10 transition cursor-pointer"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div id="bulkTagModal" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4" onclick="if(event.target===this)closeBulkTag()">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 id="bulkTagTitle" class="font-bold text-slate-900 dark:text-white text-lg"></h3>
+                <button onclick="closeBulkTag()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div id="bulkTagInputWrap">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">ტეგები (გამოყავით მძიმით)</label>
+                    <input type="text" id="bulkTagInput" onkeydown="if(event.key==='Enter'){event.preventDefault();applyBulkTag();}" oninput="syncBulkChips()" placeholder="მაგ: ნინო, საბა" class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                </div>
+                <div>
+                    <div id="bulkChipsLabel" class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2"></div>
+                    <div id="bulkChips" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto"></div>
+                </div>
+                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button type="button" onclick="closeBulkTag()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">გაუქმება</button>
+                    <button type="button" id="bulkTagApply" onclick="applyBulkTag()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer">გამოყენება</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="gTip" class="hidden fixed z-[75] pointer-events-none bg-slate-900 text-white text-xs px-3 py-2 rounded-xl shadow-xl border border-white/15 max-w-xs"></div>
+    <div id="sbTip" class="hidden fixed z-[70] pointer-events-none bg-slate-900 text-white text-xs font-medium px-3 py-2 rounded-xl shadow-xl border border-white/10 whitespace-nowrap"></div>
+
+    <div class="flex-1 flex flex-col h-full overflow-hidden">
+        <header class="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 flex items-center justify-between gap-2 z-10">
+            <div class="flex items-center gap-2 sm:gap-4 flex-1 sm:flex-none min-w-0">
+                <button onclick="toggleMobileSidebar()" class="md:hidden w-9 h-9 flex-shrink-0 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:text-indigo-600">
+                    <i class="fa-solid fa-bars text-lg"></i>
+                </button>
+                <div class="relative flex-1 min-w-0 sm:flex-none sm:w-80">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
+                        <i class="fa-solid fa-magnifying-glass text-sm"></i>
+                    </span>
+                    <button type="button" id="searchOptionsBtn" onclick="toggleSearchPanel()" title="ძიების ფილტრები" class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-slate-400 hover:text-indigo-600 cursor-pointer">
+                        <i id="searchOptionsIcon" class="fa-solid fa-sliders text-sm"></i>
+                    </button>
+                    <div id="searchPanel" class="hidden fixed left-3 right-3 top-[4.25rem] max-h-[calc(100dvh-5rem)] overflow-y-auto sm:absolute sm:left-0 sm:right-auto sm:top-full sm:mt-2 sm:w-[22rem] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl p-4 z-50 space-y-3" onkeydown="if(event.key==='Enter'){event.preventDefault();applySearchPanel();}">
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">სიტყვები</label>
+                            <input type="text" id="sfText" placeholder="ფაილის სახელი ან ტეგი" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">საქაღალდის სახელი</label>
+                            <input type="text" id="sfFolder" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">ფაილის სახელი</label>
+                            <input type="text" id="sfName" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">ტეგი</label>
+                            <input type="text" id="sfTag" list="searchTagList" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                            <datalist id="searchTagList"></datalist>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">ტიპი</label>
+                                <select id="sfType" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                                    <option value="">ყველა</option>
+                                    <option value="image">ფოტო</option>
+                                    <option value="video">ვიდეო</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">კატეგორია</label>
+                                <select id="sfCat" class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"></select>
+                            </div>
+                        </div>
+                        <label class="flex items-center space-x-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer select-none">
+                            <input type="checkbox" id="sfFav" class="w-4 h-4 rounded accent-indigo-600">
+                            <span><i class="fa-solid fa-star text-amber-400 mr-1"></i>მხოლოდ ფავორიტები</span>
+                        </label>
+                        <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                            <button type="button" onclick="clearSearchPanel()" class="px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">გასუფთავება</button>
+                            <button type="button" onclick="applySearchPanel()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer"><i class="fa-solid fa-magnifying-glass text-xs mr-1.5"></i>ძიება</button>
+                        </div>
+                    </div>
+                    <input type="text" id="searchInput" oninput="handleSearch(this.value)" placeholder="მოძებნე საქაღალდე ან ტეგი..." class="w-full pl-10 pr-10 py-2 bg-slate-100 dark:bg-slate-800 border-none rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-800 dark:text-slate-100 placeholder-slate-400 transition">
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+                <input type="file" id="folderImportInput" webkitdirectory directory multiple class="hidden" onchange="handleFolderImport(event)">
+                
+                <button onclick="startFolderImport()" class="hidden sm:flex items-center space-x-2 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-300 px-3.5 py-2 rounded-xl text-sm font-medium transition cursor-pointer" title="აირჩიეთ რეალური ფოლდერი კომპიუტერიდან">
+                    <i class="fa-solid fa-folder-tree text-xs"></i>
+                    <span class="hidden sm:inline">ფოლდერის სკანირება</span>
+                </button>
+
+                <button onclick="openModal()" title="საქაღალდის დამატება" class="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white w-9 h-9 sm:w-auto sm:h-auto sm:px-4 sm:py-2 rounded-xl text-sm font-medium transition active:scale-95 cursor-pointer">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span class="hidden sm:inline">საქაღალდის დამატება</span>
+                </button>
+
+                <div class="hidden sm:flex items-center gap-3">
+                <button onclick="openGuide()" title="როგორ გამოვიყენო?" class="flex items-center justify-center space-x-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 w-9 h-9 2xl:w-auto 2xl:h-auto 2xl:px-3 2xl:py-2 rounded-xl text-sm font-medium transition cursor-pointer whitespace-nowrap">
+                    <i class="fa-solid fa-circle-question text-sm"></i>
+                    <span class="hidden 2xl:inline">როგორ გამოვიყენო?</span>
+                </button>
+
+                <button onclick="toggleDarkMode()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                    <i id="themeIcon" class="fa-solid fa-moon text-sm"></i>
+                </button>
+
+                <button onclick="toggleFullscreen()" title="სრული ეკრანი" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                    <i class="fs-icon fa-solid fa-expand text-sm"></i>
+                </button>
+
+                <button id="installBtn" onclick="installApp()" title="აპლიკაციად ინსტალაცია" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer">
+                    <i class="fa-solid fa-download text-sm"></i>
+                </button>
+                </div>
+                <div class="relative sm:hidden">
+                    <button type="button" onclick="toggleMoreMenu(event)" title="მეტი" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                    <div id="moreMenu" class="hidden fixed right-3 top-[3.75rem] z-50 w-64 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl py-1.5 text-slate-700 dark:text-slate-200">
+                        <button type="button" onclick="closeMoreMenu();startFolderImport()"><i class="fa-solid fa-folder-tree text-indigo-500"></i><span>ფოლდერის სკანირება</span></button>
+                        <button type="button" onclick="closeMoreMenu();openGuide()"><i class="fa-solid fa-circle-question text-indigo-500"></i><span>როგორ გამოვიყენო?</span></button>
+                        <button type="button" onclick="closeMoreMenu();toggleDarkMode()"><i class="fa-solid fa-circle-half-stroke text-indigo-500"></i><span>თემა: ღია / მუქი</span></button>
+                        <button type="button" onclick="closeMoreMenu();toggleFullscreen()"><i class="fs-icon fa-solid fa-expand text-indigo-500"></i><span>სრული ეკრანი</span></button>
+                        <button type="button" id="installBtnM" onclick="closeMoreMenu();installApp()"><i class="fa-solid fa-download text-indigo-500"></i><span>აპლიკაციად ინსტალაცია</span></button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
+            <nav id="breadcrumbNav" class="flex items-center space-x-2 text-xs font-medium text-slate-500 dark:text-slate-400 mb-4 hidden"></nav>
+
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 pb-4 border-b border-slate-200 dark:border-slate-800 gap-3 sm:gap-4">
+                <div>
+                    <h1 id="sectionTitle" class="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white break-words">ყველა საქაღალდე</h1>
+                    <p id="sectionDesc" class="text-sm text-slate-500 dark:text-slate-400 mt-1">თქვენი ლოკალური ფოლდერების არქივი და ჰიერარქიული მედია კონტენტი.</p>
+                </div>
+                
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                <select id="sortSelect" onchange="setSortMode(this.value)" title="ფაილების დალაგება (თარიღი = გადაღების თარიღი, თუ ფაილში არის; სხვაგვარად ფაილის ცვლილების დრო)" class="hidden px-3 py-2 bg-slate-200/60 dark:bg-slate-800 border-0 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer">
+                    <option value="natural">დალაგება: ნაგულისხმევი</option>
+                    <option value="name-asc">სახელი (ა → ჰ)</option>
+                    <option value="name-desc">სახელი (ჰ → ა)</option>
+                    <option value="date-desc">თარიღი: ახალი ჯერ</option>
+                    <option value="date-asc">თარიღი: ძველი ჯერ</option>
+                    <option value="size-desc">ზომა: დიდი ჯერ</option>
+                    <option value="size-asc">ზომა: პატარა ჯერ</option>
+                    <option value="type">ტიპი (ფოტო / ვიდეო)</option>
+                </select>
+                <div id="layoutToggleContainer" class="flex items-center space-x-1 bg-slate-200/60 dark:bg-slate-800 p-1 rounded-xl">
+                    <button onclick="setViewMode('grid')" id="gridBtn" class="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium bg-white dark:bg-slate-700 text-slate-900 dark:text-white transition">ბადე</button>
+                    <button onclick="setViewMode('compact')" id="compactBtn" class="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 transition">კომპაქტური</button>
+                    <button onclick="setViewMode('list')" id="listBtn" class="px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-400 transition">სია</button>
+                </div>
+                </div>
+            </div>
+
+            <div id="foldersContainer"></div>
+
+            <div id="emptyState" class="hidden flex-col items-center justify-center py-16 text-center">
+                <div class="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 mb-4 text-xl">
+                    <i class="fa-solid fa-folder-open"></i>
+                </div>
+                <h3 class="text-base font-semibold text-slate-700 dark:text-slate-300">საქაღალდეები ვერ მოიძებნა</h3>
+                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">დაამატეთ ახალი საქაღალდე ან გამოიყენეთ ფოლდერის სკანირება.</p>
+            </div>
+        </main>
+    </div>
+
+    <div id="folderModal" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-lg shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 id="modalTitle" class="font-bold text-slate-900 dark:text-white text-lg">ახალი საქაღალდის დამატება</h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <form id="folderForm" onsubmit="saveFolder(event)" class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+                <input type="hidden" id="folderId">
+                <input type="hidden" id="parentFolderId" value="">
+                <div id="modalPickerRow" class="flex items-center justify-between gap-3 p-3 rounded-xl border border-dashed border-indigo-300 dark:border-indigo-800 bg-indigo-50/60 dark:bg-indigo-950/30">
+                    <div class="min-w-0">
+                        <div class="text-sm font-medium text-slate-800 dark:text-slate-100">ფაილების ავტომატური ჩატვირთვა</div>
+                        <div id="modalPickStatus" class="text-xs text-slate-500 dark:text-slate-400 truncate">აირჩიეთ საქაღალდე დისკიდან</div>
+                    </div>
+                    <button type="button" onclick="pickFolderForModal()" class="flex-shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer"><i class="fa-solid fa-folder-open text-xs mr-1.5"></i>არჩევა</button>
+                    <input type="file" id="modalFolderInput" webkitdirectory directory multiple class="hidden" onchange="handleModalFolderInput(event)">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">საქაღალდის სახელი</label>
+                    <input type="text" id="formName" required placeholder="მაგ: ფოტოები 2026" class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">ლოკალური ლინკი / ფათი</label>
+                    <input type="text" id="formLink" required placeholder="file:///C:/Users/Name/Folder" class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">პრევიუ ფოტოს ლინკი</label>
+                    <input type="url" id="formImage" placeholder="https://images.unsplash.com/photo-..." class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">კატეგორია</label>
+                    <select id="formCategory" class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"></select>
+                </div>
+                <div class="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button type="button" id="modalDeleteBtn" onclick="deleteCurrentEditingFolder()" class="hidden px-4 py-2 rounded-xl text-sm font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer">საქაღალდის წაშლა</button>
+                    <div class="flex items-center space-x-3 ml-auto">
+                        <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">გაუქმება</button>
+                        <button type="submit" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer">შენახვა</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- All Tags Modal -->
+    <div id="tagsModal" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4" onclick="if(event.target===this)closeTagsModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-lg shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-slate-900 dark:text-white text-lg">ყველა ტეგი <span id="tagsModalCount" class="text-sm font-medium text-slate-400"></span></h3>
+                <button onclick="closeTagsModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="text" id="tagsModalFilter" oninput="renderTagsModal()" placeholder="ტეგის ძებნა..." class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                <div id="tagsModalList" class="flex flex-wrap gap-2 max-h-[50vh] overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Modal -->
+    <div id="categoryModal" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-slate-900 dark:text-white text-lg">კატეგორიების მართვა</h3>
+                <button onclick="closeCategoryModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div class="flex space-x-2">
+                    <input type="text" id="newCategoryInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewCategory();}" placeholder="ახალი კატეგორიის სახელი..." class="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100">
+                    <button id="catCancelBtn" onclick="cancelEditCategory()" class="hidden px-3 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">გაუქმება</button>
+                    <button id="catSubmitBtn" onclick="addNewCategory()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer">დამატება</button>
+                </div>
+                <div>
+                    <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">საქაღალდის ფერი</div>
+                    <div id="newCategoryColors" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div class="border-t border-slate-100 dark:border-slate-800 pt-4">
+                    <div class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-3">არსებული კატეგორიები</div>
+                    <div id="manageCategoriesList" class="space-y-2 max-h-48 overflow-y-auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="galleryModal" class="fixed inset-0 z-50 bg-black/95 hidden flex-col justify-between py-2 sm:py-3 px-0">
+        <div class="flex items-center justify-between gap-2 text-white w-full px-2 sm:px-4 pt-1" style="padding-top:max(.25rem,env(safe-area-inset-top))">
+            <div class="min-w-0 flex-1">
+                <h3 id="galleryItemTitle" class="text-sm sm:text-base font-semibold text-white truncate"></h3>
+                <div class="flex items-center gap-2 mt-0.5 sm:mt-1 min-w-0">
+                    <p id="galleryItemDate" class="text-[11px] sm:text-xs text-slate-400 truncate"></p>
+                    <div id="galleryItemTagsContainer" class="hidden sm:flex flex-wrap gap-1"></div>
+                </div>
+            </div>
+            <div class="flex items-center gap-1 sm:gap-4 flex-shrink-0">
+                <button id="galleryFavBtn" onclick="toggleFavCurrent()" data-gtip="ფავორიტი" data-gkeys="S" data-gpos="below" class="w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition cursor-pointer flex items-center justify-center sm:space-x-1.5">
+                    <i class="fa-solid fa-star"></i> <span class="hidden sm:inline">ფავორიტი</span>
+                </button>
+                <button onclick="setCoverFromGallery(false)" data-gtip="გახადე ქავერად" data-gkeys="ამ საქაღალდის ქავერი გახდება მიმდინარე ფოტო/კადრი" data-gpos="below" class="w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition cursor-pointer flex items-center justify-center sm:space-x-1.5">
+                    <i class="fa-solid fa-image"></i> <span class="hidden sm:inline">ქავერად</span>
+                </button>
+                <button onclick="openTagModalForCurrentItem()" title="ტეგების რედაქტირება" class="w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition cursor-pointer flex items-center justify-center sm:space-x-1.5">
+                    <i class="fa-solid fa-tag"></i> <span class="hidden md:inline">ტეგების რედაქტირება</span>
+                </button>
+                <button onclick="toggleFullscreen()" data-gtip="სრული ეკრანი" data-gkeys="F" data-gpos="below" class="hidden sm:block text-slate-400 hover:text-white p-2 text-lg cursor-pointer">
+                    <i class="fs-icon fa-solid fa-expand"></i>
+                </button>
+                <span id="galleryCounter" class="text-xs sm:text-sm font-medium text-slate-300 whitespace-nowrap px-1">1 / 1</span>
+                <button onclick="closeGalleryModal()" data-gtip="დახურვა" data-gkeys="Esc" data-gpos="below" class="w-9 h-9 sm:w-auto sm:h-auto flex items-center justify-center text-slate-300 sm:text-slate-400 hover:text-white sm:p-2 text-xl cursor-pointer">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex-1 min-h-0 w-full my-2 relative">
+            <button onclick="prevGalleryItem()" data-gtip="წინა" data-gkeys="← · PageUp · პირველი: Home" data-gpos="right" class="absolute left-0 top-1/2 -translate-y-1/2 z-10 text-white/70 hover:text-white p-2.5 sm:p-4 text-xl sm:text-2xl bg-black/40 rounded-xl hover:bg-black/70 transition cursor-pointer">
+                <i class="fa-solid fa-chevron-left"></i>
+            </button>
+
+            <div id="galleryDisplayArea" class="absolute inset-0 flex items-center justify-center overflow-hidden" style="touch-action:none"></div>
+
+            <div class="absolute right-0 top-1/2 z-10 flex flex-col items-center gap-2" style="margin-top:-28px">
+                <button onclick="nextGalleryItem()" data-gtip="შემდეგი" data-gkeys="→ · PageDown · ბოლო: End" data-gpos="left" class="text-white/70 hover:text-white p-2.5 sm:p-4 text-xl sm:text-2xl bg-black/40 rounded-xl hover:bg-black/70 transition cursor-pointer">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <div id="galleryTools" class="flex flex-col items-center gap-0.5 bg-black/45 rounded-xl p-1 transition-opacity duration-300">
+                    <button onclick="gzStep(1)" data-gtip="გადიდება" data-gkeys="+ · მაუსის ბორბალი ↑" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-sm transition cursor-pointer"><i class="fa-solid fa-magnifying-glass-plus"></i></button>
+                    <button id="galleryZoomLabel" onclick="gzFitView()" data-gtip="მასშტაბი" data-gkeys="დააჭირე: მთლიანი კადრი (0) · გადიდებისას ისრები ხედს გადაადგილებს" data-gpos="left" class="w-10 h-6 flex items-center justify-center rounded-lg text-[11px] font-medium text-slate-300 hover:text-white hover:bg-white/15 transition cursor-pointer select-none">100%</button>
+                    <button onclick="gzStep(-1)" data-gtip="დაპატარავება" data-gkeys="− · მაუსის ბორბალი ↓" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-sm transition cursor-pointer"><i class="fa-solid fa-magnifying-glass-minus"></i></button>
+                    <div class="w-6 h-px bg-white/15 my-0.5"></div>
+                    <button onclick="gzFitView()" data-gtip="მთლიანი კადრი" data-gkeys="0 · ორმაგი დაჭერა" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-sm transition cursor-pointer"><i class="fa-solid fa-vector-square"></i></button>
+                    <button onclick="gzActual()" data-gtip="რეალური ზომა (1:1)" data-gkeys="1" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-xs font-bold transition cursor-pointer">1:1</button>
+                    <div class="w-6 h-px bg-white/15 my-0.5"></div>
+                    <button onclick="gzRotate(-1)" data-gtip="შებრუნება მარცხნივ" data-gkeys="Shift + R" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-sm transition cursor-pointer"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button onclick="gzRotate(1)" data-gtip="შებრუნება მარჯვნივ" data-gkeys="R" data-gpos="left" class="w-10 h-9 flex items-center justify-center rounded-lg text-white/80 hover:text-white hover:bg-white/15 text-sm transition cursor-pointer"><i class="fa-solid fa-rotate-right"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full px-2 sm:px-4 overflow-x-auto" style="padding-bottom:max(.25rem,env(safe-area-inset-bottom))">
+            <div id="thumbnailStrip" class="flex items-center w-max mx-auto px-2 py-2 sm:py-3"></div>
+        </div>
+
+        <div id="fileMenu" class="hidden fixed z-[60] w-80 max-w-[calc(100vw-1rem)] bg-slate-800 border border-white/10 rounded-xl shadow-2xl py-1.5 text-sm text-slate-100"></div>
+    </div>
+
+    <!-- Tag Editing Modal -->
+    <div id="tagModal" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-md shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <h3 class="font-bold text-slate-900 dark:text-white text-lg">ადამიანების ტეგები (გამოყავით მძიმით)</h3>
+                <button onclick="closeTagModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">ტეგები (მაგ: ნინო, საბა, გიორგი)</label>
+                    <div class="relative">
+                        <input type="text" id="tagInput" oninput="handleTagAutocomplete(this.value)" placeholder="ჩაწერეთ სახელები..." class="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100" autocomplete="off">
+                        <div id="tagAutocompleteDropdown" class="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg hidden z-30 max-h-40 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-end space-x-3 pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <button type="button" onclick="closeTagModal()" class="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer">გაუქმება</button>
+                    <button type="button" onclick="saveCurrentItemTag()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition cursor-pointer">შენახვა</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/app.js?v=2"></script>
+</body>
+</html>
