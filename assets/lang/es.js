@@ -395,7 +395,7 @@ window.LANG_ES = {
 "ფაილები არ არის": "No hay archivos",
 "ახალი ზემოთ": "Más recientes primero",
 "ძველი ზემოთ": "Más antiguos primero",
-"რუკის ფონი იტვირთება ინტერნეტიდან (CARTO / OpenStreetMap) (ითხოვება მხოლოდ ნანახი არეალის ფილები; შენი ფოტოები და კოორდინატები არსად იგზავნება). ინტერნეტის გარეშე წერტილები მაინც ჩანს.": "El fondo del mapa se carga desde internet (CARTO / OpenStreetMap) (solo se piden los mosaicos de la zona que ves; tus fotos y coordenadas no se envían a ningún sitio). Sin internet los puntos se siguen viendo.",
+"რუკის ფონი იტვირთება OpenStreetMap-იდან და ინტერნეტი სჭირდება (ითხოვება მხოლოდ ნანახი არეალის ფილები; შენი ფოტოები და კოორდინატები არსად იგზავნება). ინტერნეტის გარეშე წერტილები მაინც ჩანს.": "El fondo del mapa se carga desde OpenStreetMap y requiere internet (solo se piden los mosaicos de la zona que ves; tus fotos y coordenadas no se envían a ningún sitio). Sin internet los puntos se siguen viendo.",
 "რუკის ბიბლიოთეკა ვერ ჩაიტვირთა (assets/vendor/leaflet)": "No se pudo cargar la biblioteca del mapa (assets/vendor/leaflet)",
 "რუკის ფონი ვერ ჩაიტვირთა (ინტერნეტი არ არის?). ფოტოების წერტილები მაინც ჩანს.": "No se pudo cargar el fondo del mapa (¿sin internet?). Los puntos de las fotos se siguen viendo.",
 "{} ფაილი": "{} archivos",
