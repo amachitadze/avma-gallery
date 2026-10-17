@@ -481,6 +481,13 @@ const defaultCategories = [
             folders.filter(f => f.parentId === root.id).forEach(s => addFolder(s, s.name));
             return set;
         }
+        function collectNotes(root) {
+            const map = new Map();
+            const addFolder = (f, sub) => (f.mediaFiles || []).forEach(m => { if (m.note) map.set(sub + '/' + m.name, m.note); });
+            addFolder(root, '');
+            folders.filter(f => f.parentId === root.id).forEach(s => addFolder(s, s.name));
+            return map;
+        }
         function confirmReplace(name) {
             const old = findImportedRoot(name);
             if (old && !confirm(`„${name}“ უკვე დამატებულია. განვაახლო? (ტეგები შენარჩუნდება)`)) return false;
@@ -602,6 +609,7 @@ const defaultCategories = [
             const rootId = 'dir_' + Date.now();
             const keepTags = old ? collectTags(old) : new Map();
             const keepFav = old ? collectFavs(old) : new Set();
+            const keepNote = old ? collectNotes(old) : new Map();
             const mainCategory = opts.category || (old ? (old.category || 'work') : (currentFilter === 'all' ? 'work' : currentFilter));
 
             const rootMedia = [];
@@ -613,6 +621,7 @@ const defaultCategories = [
                 const tagKey = (e.path.length === 1 ? '' : e.path[0]) + '/' + name;
                 const meta = { type: e.type, name, date: e.mtime ? fmtDate(e.mtime) : nowStr, mtime: e.mtime || 0, size: e.size || 0, tags: (keepTags.get(tagKey) || []).slice(), local: true, path: e.path };
                 if (keepFav.has(tagKey)) meta.fav = true;
+                if (keepNote.has(tagKey)) meta.note = keepNote.get(tagKey);
                 if (!rootHandle && e.file) sessionFiles.set(rootId + '|' + e.path.join('/'), e.file);
 
                 if (e.path.length === 1) {
@@ -949,7 +958,8 @@ const defaultCategories = [
                         const tags = (file.tags || []).map(lc);
                         if (nq.length && !nq.every(q => name.includes(q))) return;
                         if (tq.length && !tq.every(q => tags.includes(q))) return;
-                        if (words.length && !words.every(w => name.includes(w) || tags.some(t => t.includes(w)))) return;
+                        const note = lc(file.note || '');
+                        if (words.length && !words.every(w => name.includes(w) || note.includes(w) || tags.some(t => t.includes(w)))) return;
                         out.files.push({ file, folder: f, index: idx });
                     });
                 });
@@ -1251,7 +1261,7 @@ const defaultCategories = [
             _renderFoldersInner();
             updateSortUi();
             decorateSelectable();
-            decorateFav();
+            decorateFav(); decorateNotes();
             updateFavNav();
             observeLazy(document.getElementById('foldersContainer'));
             scheduleBackfill();
@@ -1262,7 +1272,7 @@ const defaultCategories = [
         function stopPager() { if (_pagerObs) { _pagerObs.disconnect(); _pagerObs = null; } _pagerAll = null; }
         function afterCardsAdded() {
             const c = document.getElementById('foldersContainer');
-            decorateSelectable(); decorateFav(); observeLazy(c);
+            decorateSelectable(); decorateFav(); decorateNotes(); observeLazy(c);
         }
         function pageCards(container, list, make, ctx) {
             stopPager();
@@ -1464,12 +1474,6 @@ const defaultCategories = [
                         <div class="p-3.5 flex-1 flex flex-col justify-between">
                             <div>
                                 <h3 onclick="navigateToFolder('${folder.id}')" class="font-semibold text-slate-900 dark:text-white text-sm truncate mb-1 cursor-pointer hover:text-indigo-600 transition" title="${folder.name}">${folder.name}</h3>
-                            </div>
-                            <div class="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
-                                <button onclick="navigateToFolder('${folder.id}')" class="inline-flex items-center space-x-1 text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2.5 py-1.5 rounded-xl transition hover:bg-indigo-100 cursor-pointer">
-                                    <i class="fa-solid fa-folder-open"></i>
-                                    <span>გახსნა</span>
-                                </button>
                             </div>
                         </div>
                     `;
@@ -2019,6 +2023,7 @@ const defaultCategories = [
             _renderGalleryViewerInner();
             observeLazy(document.getElementById('thumbnailStrip'));
             updateGalleryFavBtn();
+            noteRefresh(true);
         }
 
         function _renderGalleryViewerInner() {
@@ -2220,9 +2225,6 @@ const defaultCategories = [
         }
         try { if (localStorage.getItem('avma_sidebar_collapsed') === '1') document.getElementById('sidebar').classList.add('collapsed'); } catch (e) {}
 
-        function closeMoreMenu() { const m = document.getElementById('moreMenu'); if (m) m.classList.add('hidden'); }
-        function toggleMoreMenu(e) { if (e) e.stopPropagation(); const m = document.getElementById('moreMenu'); if (m) m.classList.toggle('hidden'); }
-        document.addEventListener('click', (e) => { if (!e.target.closest('#moreMenu')) closeMoreMenu(); });
         function toggleMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             sidebar.classList.toggle('-translate-x-full');
@@ -2336,14 +2338,27 @@ const defaultCategories = [
         /* ---------- Automatic JSON backup into one chosen file ---------- */
         let backupHandle = null, backupTimer = null, backupBusy = false, backupAgain = false, backupNeedsPerm = false, backupError = '', backupLast = 0, backupPermArmed = false;
         const backupSupported = () => !!(window.showSaveFilePicker && idbOk);
-        function backupTimeStr(t) { return t ? new Date(t).toLocaleString('ka-GE', { dateStyle: 'short', timeStyle: 'short' }) : '—'; }
+        function backupTimeStr(t) { return t ? new Date(t).toLocaleString((window.LANG === 'es' ? 'es-ES' : 'ka-GE'), { dateStyle: 'short', timeStyle: 'short' }) : '—'; }
         function updateBackupUi() {
+            const ind = document.getElementById('backupInd');
+            const sup = backupSupported();
+            const state = !sup ? 'na' : (!backupHandle ? 'off' : (backupError ? 'err' : (backupNeedsPerm ? 'perm' : 'on')));
+            if (ind) {
+                const cls = { na: 'bg-slate-400', off: 'bg-slate-400', on: 'bg-emerald-500', perm: 'bg-amber-500', err: 'bg-rose-500' }[state];
+                ind.className = 'absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-slate-900 cursor-pointer z-[1] ' + cls;
+                ind.setAttribute('data-tip', {
+                    na: 'ავტო-ბექაპი ამ ბრაუზერში მიუწვდომელია\n(მუშაობს Chrome-სა და Edge-ში)',
+                    off: 'ავტო-ბექაპი გამორთულია\nდააჭირე ჩასართავად',
+                    on: `ავტო-ბექაპი ჩართულია\nფაილი: ${backupHandle && backupHandle.name}\nბოლო ჩაწერა: ${backupTimeStr(backupLast)}`,
+                    perm: 'ბექაპს წვდომის დადასტურება სჭირდება\nდააჭირე დასადასტურებლად',
+                    err: 'ბექაპის შეცდომა: ' + backupError + '\nდააჭირე დეტალებისთვის'
+                }[state]);
+            }
             const b = document.getElementById('backupBtn');
             if (!b) return;
-            if (!backupSupported()) { b.classList.add('hidden'); b.classList.remove('flex'); return; }
+            if (!sup) { b.classList.add('hidden'); b.classList.remove('flex'); return; }
             b.classList.remove('hidden'); b.classList.add('flex');
             const dot = document.getElementById('backupDot');
-            const state = !backupHandle ? 'off' : (backupError ? 'err' : (backupNeedsPerm ? 'perm' : 'on'));
             dot.className = 'w-2 h-2 rounded-full ' + ({ off: 'bg-slate-300 dark:bg-slate-600', on: 'bg-emerald-500', perm: 'bg-amber-500', err: 'bg-rose-500' })[state];
             const tip = { off: 'ავტომატური ბექაპი (გამორთულია)', on: `ბექაპი ჩართულია · ბოლო ჩაწერა: ${backupTimeStr(backupLast)}`, perm: 'ბექაპს წვდომის დადასტურება სჭირდება', err: 'ბექაპის შეცდომა: ' + backupError }[state];
             b.setAttribute('data-tip', tip);
@@ -2892,6 +2907,77 @@ const defaultCategories = [
             const sp = b.querySelector('span');
             if (sp) sp.textContent = on ? 'ფავორიტია' : 'ფავორიტი';
         }
+
+        /* ---------- notes (m.note): gallery button + hover card, shown on tiles, searchable ---------- */
+        const NOTE = { editing: false, pinned: false, t: null };
+        const noteEl = (id) => document.getElementById(id);
+        const noteOpen = () => !noteEl('notePop').classList.contains('hidden');
+        function noteCur() { const c = currentGalleryItem(); return c ? c.item : null; }
+        function noteShow() {
+            const it = noteCur(); if (!it) return;
+            clearTimeout(NOTE.t);
+            noteEl('noteText').textContent = it.note || '';
+            noteEl('noteView').classList.toggle('hidden', NOTE.editing);
+            noteEl('noteEditBox').classList.toggle('hidden', !NOTE.editing);
+            noteEl('notePop').classList.remove('hidden');
+        }
+        function noteClose() { clearTimeout(NOTE.t); NOTE.editing = false; NOTE.pinned = false; noteEl('notePop').classList.add('hidden'); }
+        function noteRefresh(reset) {
+            if (reset) noteClose();
+            const it = noteCur(); const b = noteEl('noteBtn'); if (!b) return;
+            const has = !!(it && it.note);
+            const i = b.querySelector('i'); if (i) i.className = 'fa-solid fa-note-sticky' + (has ? ' text-amber-300' : '');
+            const sp = b.querySelector('span'); if (sp) sp.textContent = has ? 'ნოუთი ✓' : 'ნოუთი';
+            if (has) b.removeAttribute('data-gtip'); else b.setAttribute('data-gtip', 'ნოუთის დაწერა');
+        }
+        function noteEdit() {
+            const it = noteCur(); if (!it) return;
+            NOTE.editing = true; noteShow();
+            const ta = noteEl('noteInput'); ta.value = it.note || ''; ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+        function noteBtnClick() {
+            const it = noteCur(); if (!it) return;
+            if (!it.note) { noteEdit(); return; }
+            if (noteOpen() && NOTE.pinned) { noteClose(); return; }
+            NOTE.pinned = true; noteShow();
+        }
+        function noteCancel() { noteClose(); }
+        async function noteSave() {
+            const it = noteCur(); if (!it) return;
+            const v = noteEl('noteInput').value.trim();
+            if (v) it.note = v; else delete it.note;
+            noteClose(); noteRefresh(); await persistData(); toast(v ? 'ნოუთი შენახულია' : 'ნოუთი წაიშალა', 1500);
+        }
+        function noteDelete() {
+            const it = noteCur(); if (!it || !it.note) return;
+            const old = it.note; delete it.note; noteClose(); noteRefresh(); persistData();
+            pushUndo('ნოუთი წაიშალა', () => { it.note = old; noteRefresh(); });
+        }
+        (function () {
+            const w = noteEl('noteWrap'); if (!w) return;
+            w.addEventListener('mouseenter', () => { const it = noteCur(); if (it && it.note && !NOTE.editing && window.matchMedia('(hover:hover)').matches) noteShow(); });
+            w.addEventListener('mouseleave', () => { if (NOTE.editing || NOTE.pinned) return; clearTimeout(NOTE.t); NOTE.t = setTimeout(() => { if (!NOTE.editing && !NOTE.pinned) noteEl('notePop').classList.add('hidden'); }, 250); });
+            noteEl('noteInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); noteSave(); } });
+            document.addEventListener('mousedown', (e) => { if (noteOpen() && !NOTE.editing && !w.contains(e.target)) noteClose(); });
+        })();
+        // small note badge on tiles; its tooltip is the note itself
+        function decorateNotes() {
+            selCards().forEach(card => {
+                const [fid, idxS] = card.dataset.sel.split('|');
+                const f = folders.find(x => x.id === fid);
+                const m = f && f.mediaFiles && f.mediaFiles[+idxS];
+                let b = card.querySelector('.note-badge');
+                if (!m || !m.note) { if (b) b.remove(); return; }
+                const list = !card.classList.contains('flex-col');
+                if (!b) {
+                    b = document.createElement('span');
+                    b.className = 'note-badge flex-shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-[11px] ' + (list ? 'text-amber-500 mr-1' : 'bg-slate-900/70 text-amber-300 absolute bottom-2 right-10 z-[1]');
+                    b.innerHTML = '<i class="fa-solid fa-note-sticky"></i>';
+                    if (list) card.lastElementChild.prepend(b); else (card.firstElementChild || card).appendChild(b);
+                }
+                b.title = m.note;
+            });
+        }
         function decorateFav() {
             selCards().forEach(card => {
                 if (card.querySelector('.fav-btn')) return;
@@ -3233,9 +3319,9 @@ const defaultCategories = [
             }
             return 0;
         }
-        async function readTakenDate(file, type, name) {
+        async function readExifWith(file, type, name, parse) {
             try {
-                if (type === 'video') return /\.(mp4|mov)$/i.test(name || '') ? await mp4TakenDate(file) : 0;
+                if (type === 'video') return 0;
                 const head = new DataView(await file.slice(0, 262144).arrayBuffer());
                 const len = head.byteLength;
                 if (len < 12) return 0;
@@ -3245,7 +3331,7 @@ const defaultCategories = [
                         const mk = head.getUint16(o);
                         if ((mk & 0xFF00) !== 0xFF00 || mk === 0xFFDA || mk === 0xFFD9) break;
                         if (mk === 0xFFD8 || (mk >= 0xFFD0 && mk <= 0xFFD7) || mk === 0xFF01) { o += 2; continue; }
-                        if (mk === 0xFFE1 && o + 10 <= len && head.getUint32(o + 4) === 0x45786966) return tiffTakenDate(head, o + 10);
+                        if (mk === 0xFFE1 && o + 10 <= len && head.getUint32(o + 4) === 0x45786966) return parse(head, o + 10);
                         o += 2 + head.getUint16(o + 2);
                     }
                     return 0;
@@ -3254,7 +3340,7 @@ const defaultCategories = [
                     let o = 8;
                     while (o + 12 <= len) {
                         const cl = head.getUint32(o), ct = head.getUint32(o + 4);
-                        if (ct === 0x65584966) { const b = o + 8; return b + cl <= len ? tiffTakenDate(head, b) : 0; }
+                        if (ct === 0x65584966) { const b = o + 8; return b + cl <= len ? parse(head, b) : 0; }
                         if (ct === 0x49444154) break;
                         o += 12 + cl;
                     }
@@ -3267,13 +3353,17 @@ const defaultCategories = [
                         const id = h.getUint32(0), sz = h.getUint32(4, true);
                         if (id === 0x45584946) {                                         // 'EXIF'
                             const dv = new DataView(await file.slice(o + 8, o + 8 + Math.min(sz, 65536)).arrayBuffer());
-                            return tiffTakenDate(dv, dv.byteLength > 6 && dv.getUint32(0) === 0x45786966 ? 6 : 0);
+                            return parse(dv, dv.byteLength > 6 && dv.getUint32(0) === 0x45786966 ? 6 : 0);
                         }
                         o += 8 + sz + (sz & 1);
                     }
                 }
                 return 0;
             } catch (e) { return 0; }
+        }
+        async function readTakenDate(file, type, name) {
+            if (type === 'video') { try { return /\.(mp4|mov)$/i.test(name || '') ? await mp4TakenDate(file) : 0; } catch (e) { return 0; } }
+            return readExifWith(file, type, name, tiffTakenDate);
         }
         const exifCapable = (m) => (m.type === 'image' && /\.(jpe?g|webp|png)$/i.test(m.name || '')) || (m.type === 'video' && /\.(mp4|mov)$/i.test(m.name || ''));
 
@@ -3289,7 +3379,7 @@ const defaultCategories = [
                 const live = rootHandles.has(f.rootId) && accessGranted.has(f.rootId);
                 (f.mediaFiles || []).forEach(m => {
                     if (!m.local || !m.path || backfillTried.has(m)) return;
-                    if (!(!m.mtime || (m.exifChecked !== 1 && exifCapable(m)))) return;
+                    if (!(!m.mtime || ((m.exifChecked !== 1 || m.gpsChecked !== 1) && exifCapable(m)))) return;
                     if (!live && !sessionFiles.has(f.rootId + '|' + m.path.join('/'))) return;
                     jobs.push({ f, m });
                 });
@@ -3308,6 +3398,11 @@ const defaultCategories = [
                             const t = await readTakenDate(file, m.type, m.name);
                             if (t) { m.taken = t; withTaken++; } else delete m.taken;
                             m.exifChecked = 1;
+                        }
+                        if (m.gpsChecked !== 1 && exifCapable(m) && typeof window.readGps === 'function') {
+                            const g = await window.readGps(file, m.type, m.name);
+                            if (g) m.gps = g; else delete m.gps;
+                            m.gpsChecked = 1;
                         }
                         done++;
                     } catch (e) { /* missing / no access: tried once per session */ }
@@ -3693,7 +3788,8 @@ const defaultCategories = [
             const tagOpen = !document.getElementById('tagModal').classList.contains('hidden');
             if (e.key === 'Escape') {
                 e.preventDefault();
-                if (fileMenuOpen()) closeFileMenu();
+                if (noteOpen()) noteClose();
+                else if (fileMenuOpen()) closeFileMenu();
                 else if (tagOpen) closeTagModal();
                 else closeGalleryModal();
                 return;
@@ -3715,6 +3811,7 @@ const defaultCategories = [
             else if (gz.el && (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd')) { e.preventDefault(); gzStep(1); }
             else if (gz.el && (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract')) { e.preventDefault(); gzStep(-1); }
             else if (e.code === 'KeyS') { e.preventDefault(); toggleFavCurrent(); }
+            else if (e.code === 'KeyN') { e.preventDefault(); noteBtnClick(); }
             else if (gz.el && (e.code === 'Digit0' || e.code === 'Numpad0')) { e.preventDefault(); gzFitView(); }
             else if (gz.el && (e.code === 'Digit1' || e.code === 'Numpad1')) { e.preventDefault(); gzActual(); }
             else if (gz.el && e.code === 'KeyR') { e.preventDefault(); gzRotate(e.shiftKey ? -1 : 1); }
@@ -3767,11 +3864,8 @@ const defaultCategories = [
         const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
         const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} };
         function updateInstallBtn() {
-            const b = document.getElementById('installBtn');
             const hide = isStandalone() || lsGet('avma_installed') === '1';
-            if (b) b.classList.toggle('hidden', hide);
-            const m = document.getElementById('installBtnM');
-            if (m) m.classList.toggle('hidden', hide);
+            document.querySelectorAll('[data-install]').forEach(el => el.classList.toggle('hidden', hide));
         }
         function hideInstallBanner() {
             const el = document.getElementById('installBanner');
@@ -3852,7 +3946,7 @@ const defaultCategories = [
            Built-in guide (first visit + "როგორ გამოვიყენო?" button)
            ==================================================================== */
         const GUIDE_IMGS = {"home": "assets/guide/home.webp", "folder": "assets/guide/folder.webp", "select": "assets/guide/select.webp", "search": "assets/guide/search.webp", "gallery": "assets/guide/gallery.webp", "install": "assets/guide/install.webp", "data": "assets/guide/data.webp"};
-        const GUIDE_STEPS = [{"img": "home", "t": "კეთილი იყოს შენი მობრძანება AvmaDrive-ში", "b": "ეს არის შენი კომპიუტერის ფოტოებისა და ვიდეოების ორგანიზატორი ბრაუზერში. ფაილები არსად იტვირთება და დისკიდან არ გადაადგილდება, აპი მხოლოდ კითხულობს მათ."}, {"img": "folder", "t": "დაამატე საქაღალდე", "b": "დააჭირე „ფოლდერის სკანირებას“ და აირჩიე საქაღალდე. ქვესაქაღალდეები თავისით შემოვა. როცა დისკზე ცვლილებაა, დააჭირე „განახლებას“: ახალი ფაილები დაემატება, ტეგები დარჩება."}, {"img": "folder", "t": "მოაწესრიგე", "b": "კატეგორიები ფერადი ჯგუფებია საქაღალდეებისთვის. ტეგებით ნიშნავ ფაილებს, მაგალითად ადამიანების სახელებით. ★-ით ნიშნავ ფავორიტებს, ყველა ფავორიტი ერთ სიაშია მარცხენა მენიუში."}, {"img": "select", "t": "მონიშნე და მართე", "b": "მონიშნე რამდენიმე ფაილი (Shift-ით დიაპაზონი) და ქვედა პანელიდან დაამატე ან მოხსენი ტეგი. „წაშლა“ ფაილს მხოლოდ ბიბლიოთეკიდან ხსნის, დისკზე არაფერი იშლება. შეცდომა? დააჭირე Ctrl+Z."}, {"img": "search", "t": "იპოვე წამებში", "b": "ძიების ველში აკრიფე სიტყვა და იპოვის ფაილს, საქაღალდეს ან ტეგს. დასაზუსტებლად გამოიყენე tag:ზღვა, folder:ზაფხული, type:video, is:fav ან გახსენი ფილტრის პანელი."}, {"img": "gallery", "t": "უყურე კომფორტულად", "b": "ისრებით გადადიხარ წინა და შემდეგ ფაილზე, მაუსის ბორბლით ზუმავ, F არის სრული ეკრანი, R შემობრუნება, S ფავორიტი. სათაურზე დაჭერა ფაილის მენიუს ხსნის, „ქავერად“ კი საქაღალდეს ქავერს უცვლის."}, {"img": "install", "t": "დააინსტალირე აპად", "b": "Chrome-სა ან Edge-ში დააჭირე ბარათზე „დაინსტალირება“ ან ზედა მარჯვენა ხატულას. აპი ცალკე ფანჯარაში გაიხსნება, მისამართის ზოლის გარეშე, და ინტერნეტის გარეშეც იმუშავებს."}, {"img": "data", "t": "დაიცავი მონაცემები", "b": "ტეგები და კატეგორიები ინახება შენს ბრაუზერში. ჩართე „ავტო-ბექაპი“ ან გააკეთე ექსპორტი, რომ ბრაუზერის გასუფთავებამ არაფერი წაგართვას. უკეთ მუშაობს Chrome-სა და Edge-ში."}];
+        const GUIDE_STEPS = [{"img": "home", "t": "კეთილი იყოს შენი მობრძანება AvmaDrive-ში", "b": "ეს არის შენი კომპიუტერის ფოტოებისა და ვიდეოების ორგანიზატორი ბრაუზერში. ფაილები არსად იტვირთება და დისკიდან არ გადაადგილდება, აპი მხოლოდ კითხულობს მათ."}, {"img": "folder", "t": "დაამატე საქაღალდე", "b": "დააჭირე „ფოლდერის სკანირებას“ და აირჩიე საქაღალდე. ქვესაქაღალდეები თავისით შემოვა. როცა დისკზე ცვლილებაა, დააჭირე „განახლებას“: ახალი ფაილები დაემატება, ტეგები დარჩება."}, {"img": "folder", "t": "მოაწესრიგე", "b": "კატეგორიები ფერადი ჯგუფებია საქაღალდეებისთვის. ტეგებით ნიშნავ ფაილებს, მაგალითად ადამიანების სახელებით. ★-ით ნიშნავ ფავორიტებს, ყველა ფავორიტი ერთ სიაშია მარცხენა მენიუში."}, {"img": "select", "t": "მონიშნე და მართე", "b": "მონიშნე რამდენიმე ფაილი (Shift-ით დიაპაზონი) და ქვედა პანელიდან დაამატე ან მოხსენი ტეგი. „წაშლა“ ფაილს მხოლოდ ბიბლიოთეკიდან ხსნის, დისკზე არაფერი იშლება. შეცდომა? დააჭირე Ctrl+Z."}, {"img": "search", "t": "იპოვე წამებში", "b": "ძიების ველში აკრიფე სიტყვა და იპოვის ფაილს, საქაღალდეს ან ტეგს. დასაზუსტებლად გამოიყენე tag:ზღვა, folder:ზაფხული, type:video, is:fav ან გახსენი ფილტრის პანელი."}, {"img": "gallery", "t": "უყურე კომფორტულად", "b": "ისრებით გადადიხარ წინა და შემდეგ ფაილზე, მაუსის ბორბლით ზუმავ, F არის სრული ეკრანი, R შემობრუნება, S ფავორიტი. სათაურზე დაჭერა ფაილის მენიუს ხსნის, „ქავერად“ კი საქაღალდეს ქავერს უცვლის."}, {"img": "install", "t": "დააინსტალირე აპად", "b": "Chrome-სა ან Edge-ში დააჭირე ბარათზე „დაინსტალირება“ ან ზედა მარჯვენა ხატულას. აპი ცალკე ფანჯარაში გაიხსნება, მისამართის ზოლის გარეშე, და ინტერნეტის გარეშეც იმუშავებს."}, {"img": "data", "t": "დაიცავი მონაცემები", "b": "ტეგები და კატეგორიები ინახება შენს ბრაუზერში. ჩართე „ავტო-ბექაპი“ ან გააკეთე ექსპორტი, რომ ბრაუზერის გასუფთავებამ არაფერი წაგართვას. უკეთ მუშაობს Chrome-სა და Edge-ში."}, {"img": "home", "t": "ღია კოდი და ლოკალური გაშვება", "b": "AvmaDrive ღია კოდის პროექტია. კოდი, ინსტრუქცია და ჩამოსატვირთი ვერსია GitHub-ზეა. კომპიუტერზე გასაშვებად ჩამოტვირთე საქაღალდე და Windows-ზე გახსენი AvmaDrive.bat (ან საქაღალდეში გაუშვი python3 -m http.server 8765 და გახსენი localhost:8765).", "link": "https://github.com/amachitadze/avma-gallery"}];
         let guideIdx = 0;
         const guideOpen = () => { const m = document.getElementById('guideModal'); return !!m && !m.classList.contains('hidden'); };
         function guideRender() {
@@ -3862,7 +3956,16 @@ const defaultCategories = [
             img.className = 'w-full h-full ' + (st.img === 'data' ? 'object-contain' : 'object-cover object-left-top');
             document.getElementById('guideStep').textContent = `ნაბიჯი ${guideIdx + 1} / ${GUIDE_STEPS.length}`;
             document.getElementById('guideTitle').textContent = st.t;
-            document.getElementById('guideText').textContent = st.b;
+            const gt = document.getElementById('guideText');
+            gt.textContent = st.b;
+            if (st.link) {
+                gt.appendChild(document.createElement('br'));
+                const a = document.createElement('a');
+                a.href = st.link; a.target = '_blank'; a.rel = 'noopener';
+                a.className = 'text-indigo-600 dark:text-indigo-400 underline break-all';
+                a.textContent = st.link;
+                gt.appendChild(a);
+            }
             document.getElementById('guidePrev').style.visibility = guideIdx === 0 ? 'hidden' : 'visible';
             document.getElementById('guideNext').textContent = guideIdx === GUIDE_STEPS.length - 1 ? 'დაწყება' : 'შემდეგი';
             const dots = document.getElementById('guideDots');
