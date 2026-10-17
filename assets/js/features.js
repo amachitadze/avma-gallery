@@ -276,18 +276,31 @@
 
     /* ======================= MAP ======================= */
     let leafletP = null;
+    const LEAFLET_SRC = [
+        ['assets/vendor/leaflet/leaflet.css?v=9', 'assets/vendor/leaflet/leaflet.js?v=9'],
+        ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'],
+        ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js']
+    ];
     function loadLeaflet() {
         if (window.L) return Promise.resolve();
         if (leafletP) return leafletP;
-        leafletP = new Promise((res, rej) => {
-            const css = document.createElement('link');
-            css.rel = 'stylesheet'; css.href = 'assets/vendor/leaflet/leaflet.css?v=7';
-            document.head.appendChild(css);
-            const s = document.createElement('script');
-            s.src = 'assets/vendor/leaflet/leaflet.js?v=7';
-            s.onload = () => res(); s.onerror = () => { leafletP = null; rej(new Error('leaflet')); };
-            document.head.appendChild(s);
+        const tried = [];
+        const one = (css, js) => new Promise((res, rej) => {
+            const l = document.createElement('link');
+            l.rel = 'stylesheet'; l.href = css; document.head.appendChild(l);
+            const sc = document.createElement('script');
+            sc.src = js;
+            sc.onload = () => (window.L ? res() : rej(new Error('no L')));
+            sc.onerror = () => { sc.remove(); l.remove(); rej(new Error('load')); };
+            document.head.appendChild(sc);
         });
+        leafletP = (async () => {
+            for (const [css, js] of LEAFLET_SRC) {
+                try { await one(css, js); return; } catch (e) { tried.push(js.split('?')[0]); }
+            }
+            leafletP = null;
+            const err = new Error('leaflet'); err.tried = tried; throw err;
+        })();
         return leafletP;
     }
     window.openMap = async function () {
@@ -297,23 +310,22 @@
         const el = panel('mapModal', 'რუკა', 'fa-map-location-dot', '<span id="mapStat" class="text-xs text-slate-500 truncate"></span>');
         const body = el.querySelector('.pn-body');
         body.innerHTML = `<div id="mapEl" class="absolute inset-0 bg-slate-200 dark:bg-slate-800"></div>
-            <div id="mapNote" class="absolute left-2 bottom-2 right-2 sm:right-auto sm:max-w-md z-[500] text-[11px] text-slate-600 dark:text-slate-300 bg-white/90 dark:bg-slate-900/90 rounded-xl px-3 py-2 shadow">რუკის ფონი იტვირთება ინტერნეტიდან (CARTO / OpenStreetMap) (ითხოვება მხოლოდ ნანახი არეალის ფილები; შენი ფოტოები და კოორდინატები არსად იგზავნება). ინტერნეტის გარეშე წერტილები მაინც ჩანს.</div>
+            <div id="mapNote" class="absolute left-2 bottom-2 right-2 sm:right-auto sm:max-w-md z-[500] text-[11px] text-slate-600 dark:text-slate-300 bg-white/90 dark:bg-slate-900/90 rounded-xl px-3 py-2 shadow">რუკის ფონი იტვირთება OpenStreetMap-იდან და ინტერნეტი სჭირდება (ითხოვება მხოლოდ ნანახი არეალის ფილები; შენი ფოტოები და კოორდინატები არსად იგზავნება). ინტერნეტის გარეშე წერტილები მაინც ჩანს.</div>
             <div id="mapSide" class="hidden absolute z-[600] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xl flex-col inset-x-0 bottom-0 max-h-[55%] border-t rounded-t-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-0 sm:w-80 sm:max-h-none sm:border-l sm:border-t-0 sm:rounded-none"></div>`;
         const stat = $('mapStat');
         let stop = false, map = null, layer = null, pts = [], tileOk = false, tileErr = 0;
         closers.mapModal = () => { stop = true; if (map) { try { map.remove(); } catch (e) {} } };
-        try { await loadLeaflet(); } catch (e) { body.innerHTML = '<div class="h-full flex items-center justify-center text-sm text-slate-500 p-6 text-center">რუკის ბიბლიოთეკა ვერ ჩაიტვირთა (assets/vendor/leaflet)</div>'; return; }
+        try { await loadLeaflet(); } catch (e) { body.innerHTML = '<div class="h-full flex flex-col items-center justify-center gap-2 text-sm text-slate-500 p-6 text-center"><div>რუკის ბიბლიოთეკა ვერ ჩაიტვირთა.</div><div class="text-xs">შეამოწმე, რომ საქაღალდე assets/vendor/leaflet ატვირთულია (leaflet.js და leaflet.css), ან გახსენი რუკა ინტერნეტით.</div><div class="text-[11px] text-slate-400 break-all">' + escH((e.tried || []).join(' · ')) + '</div></div>'; return; }
         if (!$('mapEl')) return;
         await asks;
         map = L.map('mapEl', { preferCanvas: true, worldCopyJump: true, zoomControl: true }).setView([30, 10], 2);
-        // OpenStreetMap's own servers reject requests without a Referer (pages opened from a file), so the first choice is CARTO, then Esri, then OSM
+        // OpenStreetMap first (works from http/https pages); it refuses pages opened as plain files (no Referer), then Esri takes over
         const PROV = [
-            ['https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, attribution: '© OpenStreetMap, © CARTO' }],
-            ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }],
-            ['https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }]
+            ['https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }],
+            ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles © Esri' }]
         ];
         let pi = 0, tiles = null;
-        const useProv = () => {
+        let useProv = () => {
             if (tiles) map.removeLayer(tiles);
             tileOk = false; tileErr = 0;
             tiles = L.tileLayer(PROV[pi][0], PROV[pi][1]).addTo(map);
@@ -324,6 +336,10 @@
                 else { const n = $('mapNote'); if (n) n.textContent = 'რუკის ფონი ვერ ჩაიტვირთა (ინტერნეტი არ არის?). ფოტოების წერტილები მაინც ჩანს.'; }
             });
         };
+        let provTimer = null;
+        const armProv = () => { clearTimeout(provTimer); provTimer = setTimeout(() => { if (!tileOk && !stop && pi < PROV.length - 1) { pi++; useProv(); } }, 6000); };
+        const _use = useProv;
+        useProv = function () { _use(); armProv(); };
         useProv();
         layer = L.layerGroup().addTo(map);
 
