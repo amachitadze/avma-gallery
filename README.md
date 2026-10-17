@@ -2,11 +2,12 @@
 
 ლოკალური ფოტო/ვიდეო გალერეის მენეჯერი ბრაუზერში. **ღია კოდის პროექტია.** ფაილები არსად იტვირთება და დისკიდან არ გადაადგილდება, აპი მხოლოდ კითხულობს მათ.
 
-- ონლაინ ვერსია: https://localgallery.vercel.app/
+- ონლაინ ვერსია (Vercel): https://localgallery.vercel.app/
+- ონლაინ ვერსია (GitHub Pages): https://amachitadze.github.io/avma-gallery/
 - კოდი: https://github.com/amachitadze/avma-gallery
 
 ## ვარიანტი 1. გამოყენება ონლაინ (ყველაზე მარტივი)
-1. გახსენი https://localgallery.vercel.app/ **Chrome-ში ან Edge-ში** (კომპიუტერზე).
+1. გახსენი https://localgallery.vercel.app/ (ან https://amachitadze.github.io/avma-gallery/) **Chrome-ში ან Edge-ში** (კომპიუტერზე).
 2. დააჭირე **„ფოლდერის სკანირება“** და აირჩიე საქაღალდე ფოტოებით.
 3. ბრაუზერი ითხოვს წვდომას. დაეთანხმე („Allow“ / „View files“).
 4. სურვილისამებრ დააჭირე ზედა მარჯვენა ინსტალაციის ღილაკს (⬇), რომ აპი ცალკე ფანჯარად გახსნა.
