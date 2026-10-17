@@ -277,7 +277,7 @@
     /* ======================= MAP ======================= */
     let leafletP = null;
     const LEAFLET_SRC = [
-        ['assets/vendor/leaflet/leaflet.css?v=9', 'assets/vendor/leaflet/leaflet.js?v=9'],
+        ['assets/vendor/leaflet/leaflet.css?v=10', 'assets/vendor/leaflet/leaflet.js?v=10'],
         ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'],
         ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js']
     ];
@@ -313,6 +313,7 @@
             <div id="mapNote" class="absolute left-2 bottom-2 right-2 sm:right-auto sm:max-w-md z-[500] text-[11px] text-slate-600 dark:text-slate-300 bg-white/90 dark:bg-slate-900/90 rounded-xl px-3 py-2 shadow">რუკის ფონი იტვირთება OpenStreetMap-იდან და ინტერნეტი სჭირდება (ითხოვება მხოლოდ ნანახი არეალის ფილები; შენი ფოტოები და კოორდინატები არსად იგზავნება). ინტერნეტის გარეშე წერტილები მაინც ჩანს.</div>
             <div id="mapSide" class="hidden absolute z-[600] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-2xl flex-col inset-x-0 bottom-0 max-h-[55%] border-t rounded-t-2xl sm:inset-x-auto sm:right-0 sm:top-0 sm:bottom-0 sm:w-80 sm:max-h-none sm:border-l sm:border-t-0 sm:rounded-none"></div>`;
         const stat = $('mapStat');
+        if (location.protocol === 'file:') { const n = $('mapNote'); if (n) n.textContent = 'გვერდი ფაილიდან (file://) გაქვს გახსნილი და OpenStreetMap ასეთ გვერდებს ბლოკავს, ამიტომ რუკის ფონი შეიძლება არ გამოჩნდეს. გახსენი აპი AvmaDrive.bat-ით (localhost) ან ონლაინ ვერსიით; წერტილები ფონის გარეშეც ჩანს.'; }
         let stop = false, map = null, layer = null, pts = [], tileOk = false, tileErr = 0;
         closers.mapModal = () => { stop = true; if (map) { try { map.remove(); } catch (e) {} } };
         try { await loadLeaflet(); } catch (e) { body.innerHTML = '<div class="h-full flex flex-col items-center justify-center gap-2 text-sm text-slate-500 p-6 text-center"><div>რუკის ბიბლიოთეკა ვერ ჩაიტვირთა.</div><div class="text-xs">შეამოწმე, რომ საქაღალდე assets/vendor/leaflet ატვირთულია (leaflet.js და leaflet.css), ან გახსენი რუკა ინტერნეტით.</div><div class="text-[11px] text-slate-400 break-all">' + escH((e.tried || []).join(' · ')) + '</div></div>'; return; }
@@ -825,6 +826,65 @@
         };
         $('exGo').onclick = () => run(false);
         if ($('exShare')) $('exShare').onclick = () => run(true);
+    };
+
+
+    /* ======================= REFRESH ALL FOLDERS ======================= */
+    const rootsList = () => folders.filter(f => f.rootId && f.id === f.rootId);
+    function refreshAllBtnUi() {
+        const b = $('refreshAllBtn');
+        if (!b) return;
+        const show = currentParentId === null && currentFilter === 'all' && !isSearchActive() && rootsList().length > 0;
+        b.classList.toggle('hidden', !show); b.classList.toggle('flex', show);
+    }
+    const _rf3 = renderFolders;
+    renderFolders = function () { _rf3(); refreshAllBtnUi(); };
+    function reportDialog(rows) {
+        let el = $('raModal'); if (el) el.remove();
+        el = document.createElement('div');
+        el.id = 'raModal';
+        el.className = 'fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4';
+        const bad = rows.filter(r => !r.ok && !r.cancelled).length;
+        el.innerHTML = `<div class="bg-white dark:bg-slate-900 rounded-t-2xl sm:rounded-xl border border-slate-200 dark:border-slate-800 w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800"><h3 class="font-bold text-slate-900 dark:text-white text-lg">განახლების შედეგი</h3><p class="text-xs text-slate-500 mt-0.5">${rows.length - bad} წარმატებით${bad ? ` · <span class="text-rose-500">${bad} შეცდომით</span>` : ''}</p></div>
+            <div class="overflow-y-auto p-3 space-y-2">${rows.map(r => `<div class="flex gap-3 p-3 rounded-xl ${r.ok ? 'bg-emerald-50 dark:bg-emerald-950/30' : (r.cancelled ? 'bg-slate-100 dark:bg-slate-800' : 'bg-rose-50 dark:bg-rose-950/30')}">
+                <i class="fa-solid ${r.ok ? 'fa-circle-check text-emerald-500' : (r.cancelled ? 'fa-circle-minus text-slate-400' : 'fa-triangle-exclamation text-rose-500')} mt-0.5"></i>
+                <div class="min-w-0 text-sm"><div class="font-semibold truncate">${escH(r.name)}</div><div class="text-xs ${r.ok ? 'text-slate-600 dark:text-slate-300' : 'text-slate-600 dark:text-slate-300'} break-words">${escH(r.text)}</div></div></div>`).join('')}</div>
+            <div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex justify-end"><button type="button" id="raOk" class="px-5 py-2 rounded-xl text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">კარგი</button></div></div>`;
+        document.body.appendChild(el);
+        $('raOk').onclick = () => el.remove();
+        el.onclick = (e) => { if (e.target === el) el.remove(); };
+    }
+    window.refreshAll = async function () {
+        if (!FSA) { toast('განახლება მხოლოდ Chrome ან Edge-შია შესაძლებელი: სხვა ბრაუზერს დისკზე საქაღალდეების ხელახლა წაკითხვა არ შეუძლია', 7000); return; }
+        if (rescanBusy) { toast('განახლება უკვე მიმდინარეობს'); return; }
+        const roots = rootsList();
+        if (!roots.length) return;
+        rescanBusy = true;
+        // permission prompts have to be started inside the click
+        const asks = roots.map(r => rootHandles.has(r.id) ? requestAccess(r.id) : Promise.resolve(null));
+        const rows = [];
+        try {
+            const grants = await Promise.all(asks);
+            for (let i = 0; i < roots.length; i++) {
+                const r = roots[i], h = rootHandles.get(r.id);
+                toast(`განახლება ${i + 1} / ${roots.length}: ${r.name}`, 0);
+                if (!h) { rows.push({ name: r.name, ok: false, text: explainError({ name: 'no-handle' }) }); continue; }
+                if (!grants[i]) { rows.push({ name: r.name, ok: false, text: explainError({ name: 'NotAllowedError' }) }); continue; }
+                accessGranted.add(r.id);
+                try {
+                    const res = await rescanRoot(r.id, h, { batch: true });
+                    if (res.ok) rows.push({ name: r.name, ok: true, text: (res.added || res.removed || res.changed) ? `+${res.added} ახალი, −${res.removed} წაშლილი${res.changed ? ', ' + res.changed + ' შეცვლილი' : ''}` : 'ცვლილება არ არის' });
+                    else rows.push({ name: r.name, ok: false, cancelled: !!res.cancelled, text: res.why });
+                } catch (e) {
+                    console.error(e);
+                    rows.push({ name: r.name, ok: false, text: explainError(e) });
+                }
+            }
+        } finally { rescanBusy = false; }
+        toast('განახლება დასრულდა', 2500);
+        renderFolders();
+        reportDialog(rows);
     };
 
     /* ======================= VIDEO HOVER SCRUB ======================= */

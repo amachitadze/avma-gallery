@@ -36,7 +36,7 @@
         if (r !== undefined) return lead + r + trail;
         for (var i = 0; i < pats.length; i++) {
             var m = core.match(pats[i].re);
-            if (m) { var n = 0; return lead + pats[i].v.replace(/\{\}/g, function () { n++; return m[n] === undefined ? '' : m[n]; }) + trail; }
+            if (m) { var n = 0; return lead + pats[i].v.replace(/\{\}/g, function () { n++; return m[n] === undefined ? '' : (geo.test(m[n]) ? tr(m[n]) : m[n]); }) + trail; }
         }
         return text;
     }

@@ -515,6 +515,7 @@ const defaultCategories = [
             } catch (e) {
                 console.warn('skipped', prefix.join('/'), e);
                 out.failed = (out.failed || 0) + 1;
+                if (!out.failedErr) out.failedErr = e;
                 (out.failedPaths = out.failedPaths || []).push(prefix.join('/') || '/');
             }
             if (prefix.length <= 1) toast(`სკანირება... ${out.length}`, 0);
@@ -3417,6 +3418,16 @@ const defaultCategories = [
             }
         }
 
+        // plain-language reason for a file-system / scan error
+        function explainError(e) {
+            const n = (e && (e.name || e.message)) || '';
+            if (n === 'NotFoundError') return 'საქაღალდე დისკზე ვერ მოიძებნა: ის გადატანილია, გადარქმეულია ან წაშლილია, ან დისკი (USB/გარე) მიერთებული არ არის';
+            if (n === 'NotAllowedError' || n === 'SecurityError') return 'ბრაუზერს საქაღალდეზე წვდომა არ აქვს (ნებართვა არ დადასტურდა ან გაუქმდა)';
+            if (n === 'AbortError') return 'ოპერაცია შეწყდა';
+            if (n === 'no-handle') return 'საქაღალდე დისკთან დაკავშირებული არ არის (მონაცემები იმპორტით ჩაიტვირთა). დააჭირე „დაკავშირება დისკთან“';
+            if (n === 'TypeMismatchError' || n === 'InvalidStateError') return 'დისკზე საქაღალდის სტრუქტურა შეიცვალა სკანირების დროს. სცადე ხელახლა';
+            return (e && e.message) ? e.message : String(n || 'უცნობი შეცდომა');
+        }
         let rescanBusy = false;
         function refreshFolder(folderId) {
             const f = folders.find(x => x.id === folderId);
@@ -3429,23 +3440,26 @@ const defaultCategories = [
             rescanBusy = true;
             // must start inside the click so the permission prompt is allowed
             requestAccess(R).then(ok => {
-                if (!ok) { toast('საქაღალდეზე წვდომა არ დადასტურდა'); return; }
+                if (!ok) { toast('საქაღალდეზე წვდომა არ დადასტურდა: ბრაუზერის ნებართვის ფანჯარაში აირჩიე „Allow / დაშვება“', 7000); return; }
                 accessGranted.add(R);
                 return rescanRoot(R, h);
             }).catch(e => {
                 console.error(e);
-                toast('განახლება ვერ მოხერხდა: ' + (e.message || e.name));
+                toast('განახლება ვერ მოხერხდა: ' + explainError(e), 8000);
             }).finally(() => { rescanBusy = false; });
         }
-        async function rescanRoot(R, handle) {
+        async function rescanRoot(R, handle, opts = {}) {
+            const batch = !!opts.batch;
             const rootF = folders.find(f => f.id === R);
-            if (!rootF) { toast('ძირითადი საქაღალდე ვერ მოიძებნა'); return; }
-            toast('სკანირება...', 0);
+            if (!rootF) { if (!batch) toast('ძირითადი საქაღალდე ვერ მოიძებნა'); return { ok: false, why: 'ძირითადი საქაღალდე ბიბლიოთეკაში ვერ მოიძებნა' }; }
+            if (!batch) toast('სკანირება...', 0);
             const entries = [];
             await walkDir(handle, [], entries);
             if (entries.failed) {
-                toast(`სკანირება არასრულია („${entries.failedPaths[0]}“ ვერ წაიკითხა) — ცვლილება არ გამოყენებულა`, 8000);
-                return;
+                const root0 = entries.failedPaths[0] === '/';
+                const why = (root0 ? 'საქაღალდის გახსნა ვერ მოხერხდა' : `„${entries.failedPaths[0]}“ ვერ წაიკითხა`) + ': ' + explainError(entries.failedErr) + '. ცვლილება არ გამოყენებულა';
+                if (!batch) toast('სკანირება არასრულია: ' + why, 9000);
+                return { ok: false, why };
             }
 
             const group = folders.filter(f => f.rootId === R);
@@ -3477,7 +3491,7 @@ const defaultCategories = [
                 const go = await choiceDialog('საქაღალდის განახლება',
                     `ახალი ფაილი: ${added.length}\nდისკზე ვეღარ მოიძებნა: ${removedKeys.length}` + (withTags ? ` (მათგან ${withTags}-ს ტეგი აქვს და ტეგები დაიკარგება)` : '') + none + '\n\nგავაგრძელო?',
                     [{ label: 'გაუქმება', value: false }, { label: 'განახლება', value: true, primary: true }]);
-                if (!go) { toast('განახლება გაუქმდა'); return; }
+                if (!go) { if (!batch) toast('განახლება გაუქმდა'); return { ok: false, cancelled: true, why: 'გაუქმდა შენ მიერ' }; }
             }
 
             // removals
@@ -3527,7 +3541,7 @@ const defaultCategories = [
 
             // covers for folders that have none yet
             const needCover = folders.filter(f => f.rootId === R && !f.image && (f.mediaFiles || []).some(m => m.type === 'image' && m.path));
-            if (needCover.length) toast('ქავერების მომზადება...', 0);
+            if (needCover.length && !batch) toast('ქავერების მომზადება...', 0);
             for (const f of needCover) {
                 const first = f.mediaFiles.find(m => m.type === 'image' && m.path);
                 const en = entryByKey.get(first.path.join('/'));
@@ -3536,9 +3550,12 @@ const defaultCategories = [
 
             clearSelection();
             await persistData();
-            renderFolders();
+            if (!batch) renderFolders();
+            const res = { ok: true, added: added.length, removed: removedKeys.length, changed };
+            if (batch) return res;
             if (!added.length && !removedKeys.length && !changed) toast('ცვლილება არ არის — ყველაფერი განახლებულია', 4000);
             else toast(`განახლდა: +${added.length} ახალი, −${removedKeys.length} წაშლილი` + (changed ? `, ${changed} შეცვლილი` : '') + (newSubs.length ? `, +${newSubs.length} ქვესაქაღალდე` : '') + (emptied.length ? `, −${emptied.length} ქვესაქაღალდე` : ''), 6000);
+            return res;
         }
 
         /* ---------- Fullscreen ---------- */
