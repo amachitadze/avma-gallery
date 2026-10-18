@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>AvmaDrive</title>
     <meta name="theme-color" content="#4f46e5">
-        <link rel="stylesheet" href="assets/css/inter.css?v=10">
-    <link rel="stylesheet" href="assets/css/fontawesome.css?v=10">
-    <link rel="stylesheet" href="assets/css/tailwind.css?v=10">
+        <link rel="stylesheet" href="assets/css/inter.css?v=12">
+    <link rel="stylesheet" href="assets/css/fontawesome.css?v=12">
+    <link rel="stylesheet" href="assets/css/tailwind.css?v=12">
     <link rel="icon" type="image/png" href="assets/icons/icon-192.png">
     <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
     <style>
@@ -124,6 +124,16 @@
                 <div id="categoriesListContainer" class="space-y-1"></div>
             </div>
 
+            <div>
+                <div class="sb-hide flex items-center justify-between px-3 mb-2">
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">ალბომები</span>
+                    <button onclick="albumCreate()" class="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 text-xs font-medium flex items-center space-x-1 cursor-pointer">
+                        <i class="fa-solid fa-plus"></i> <span>ახალი</span>
+                    </button>
+                </div>
+                <div id="albumsListContainer" class="space-y-1"></div>
+            </div>
+
             <div class="sb-hide">
                 <div class="flex items-center justify-between px-3 mb-2">
                     <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">ადამიანების ტეგები</span>
@@ -233,6 +243,7 @@
         <button type="button" onclick="openBulkTag('add')" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-tag sm:mr-1.5 text-indigo-400"></i><span class="hidden sm:inline">ტეგის დამატება</span></button>
         <button type="button" onclick="openBulkTag('remove')" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-tag sm:mr-1.5 text-rose-400"></i><span class="hidden sm:inline">მოხსნა</span></button>
         <div class="w-px h-5 bg-white/15"></div>
+        <button type="button" onclick="albumAddSelected()" title="ალბომში დამატება" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-book-open sm:mr-1.5 text-pink-400"></i><span class="hidden sm:inline">ალბომში</span></button>
         <button type="button" onclick="openExport()" title="ექსპორტი: ZIP ან PDF კოლაჟი" class="px-2.5 sm:px-3 py-2 rounded-xl text-xs font-medium hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-file-export sm:mr-1.5 text-emerald-400"></i><span class="hidden sm:inline">ექსპორტი</span></button>
         <div class="w-px h-5 bg-white/15"></div>
         <button type="button" onclick="deleteSelected()" title="ბიბლიოთეკიდან წაშლა (Delete). დისკზე ფაილები არ იშლება" class="px-3 py-2 rounded-xl text-xs font-medium text-rose-300 hover:bg-white/10 transition cursor-pointer whitespace-nowrap"><i class="fa-solid fa-trash-can mr-1.5"></i><span class="hidden sm:inline">წაშლა</span></button>
@@ -515,6 +526,9 @@
                         </div>
                     </div>
                 </div>
+                <button id="editBtn" type="button" onclick="openEditor()" data-gtip="ფოტოს ჩასწორება" data-gkeys="E" data-gpos="below" class="hidden w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition cursor-pointer items-center justify-center sm:space-x-1.5">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i> <span class="hidden lg:inline">ჩასწორება</span>
+                </button>
                 <button onclick="openTagModalForCurrentItem()" title="ტეგების რედაქტირება" class="w-9 h-9 sm:w-auto sm:h-auto sm:px-3 sm:py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-medium transition cursor-pointer flex items-center justify-center sm:space-x-1.5">
                     <i class="fa-solid fa-tag"></i> <span class="hidden md:inline">ტეგების რედაქტირება</span>
                 </button>
@@ -585,10 +599,11 @@
         </div>
     </div>
 
-    <script src="assets/lang/es.js?v=10"></script>
-    <script src="assets/js/i18n.js?v=10"></script>
-    <script src="assets/js/app.js?v=10"></script>
-    <script src="assets/js/extras.js?v=10"></script>
-    <script src="assets/js/features.js?v=10"></script>
+    <script src="assets/lang/es.js?v=12"></script>
+    <script src="assets/js/i18n.js?v=12"></script>
+    <script src="assets/js/app.js?v=12"></script>
+    <script src="assets/js/extras.js?v=12"></script>
+    <script src="assets/js/features.js?v=12"></script>
+    <script src="assets/js/editor.js?v=12"></script>
 </body>
 </html>
