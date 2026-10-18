@@ -25,6 +25,7 @@ const defaultCategories = [
 
         let categories = defaultCategories.map(c => ({ ...c }));
         let folders = [];
+        let albums = [];      // [{ id, name, items: [fileKey] }] — virtual collections (fileKey = rootName + \u0001 + relative path)
 
         /* ====================================================================
            STORAGE LAYER
@@ -97,10 +98,11 @@ const defaultCategories = [
                 try {
                     localStorage.setItem('avma_drive_folders', JSON.stringify(folders));
                     localStorage.setItem('avma_drive_categories', JSON.stringify(categories));
+                    localStorage.setItem('avma_drive_albums', JSON.stringify(albums));
                     return Promise.resolve(true);
                 } catch (e) { console.error('Storage limit exceeded', e); return Promise.resolve(false); }
             }
-            return idbSet('kv', 'state', { folders, categories }).then(() => true).catch(e => {
+            return idbSet('kv', 'state', { folders, categories, albums }).then(() => true).catch(e => {
                 console.error('Storage error', e);
                 toast('მონაცემების შენახვა ვერ მოხერხდა');
                 return false;
@@ -144,6 +146,7 @@ const defaultCategories = [
             if (!state) { state = migrateLegacy(); migrated = true; }
             categories = (state.categories && state.categories.length) ? state.categories : defaultCategories.map(c => ({ ...c }));
             folders = (state.folders && state.folders.length) ? state.folders : defaultInitialFolders;
+            albums = Array.isArray(state.albums) ? state.albums : (function () { try { return JSON.parse(localStorage.getItem('avma_drive_albums')) || []; } catch (e) { return []; } })();
             categories.forEach((c, i) => { if (!c.color) c.color = ['#6366f1', '#10b981', '#f59e0b', '#0ea5e9', '#f43f5e', '#8b5cf6'][i % 6]; });
             // hidden Android files imported earlier (.trashed-*, .pending-*) are dropped
             const dirty = [];
@@ -2334,7 +2337,7 @@ const defaultCategories = [
 
         /* ---------- Data export / import (JSON) ---------- */
         function buildExport() {
-            return { app: 'AvmaDrive', version: 1, exportedAt: new Date().toISOString(), basePath: getBasePath(), categories, folders };
+            return { app: 'AvmaDrive', version: 1, exportedAt: new Date().toISOString(), basePath: getBasePath(), categories, folders, albums };
         }
         /* ---------- Automatic JSON backup into one chosen file ---------- */
         let backupHandle = null, backupTimer = null, backupBusy = false, backupAgain = false, backupNeedsPerm = false, backupError = '', backupLast = 0, backupPermArmed = false;
@@ -2498,7 +2501,8 @@ const defaultCategories = [
                 g.mediaFiles = Array.isArray(g.mediaFiles) ? g.mediaFiles.filter(m => m && !isBlob(m.url)).map(m => ({ ...m, tags: Array.isArray(m.tags) ? m.tags : [] })) : [];
                 return g;
             });
-            return { categories: cats, folders: fl };
+            const al = Array.isArray(data.albums) ? data.albums.filter(a => a && typeof a.id === 'string' && typeof a.name === 'string').map(a => ({ id: a.id, name: a.name, items: Array.isArray(a.items) ? a.items.filter(x => typeof x === 'string') : [] })) : [];
+            return { categories: cats, folders: fl, albums: al };
         }
         function choiceDialog(title, text, buttons) {
             return new Promise(resolve => {
@@ -2552,6 +2556,7 @@ const defaultCategories = [
 
             if (mode === 'replace') {
                 folders = imp.folders;
+                albums = imp.albums;
                 categories = imp.categories.length ? imp.categories : defaultCategories.map(c => ({ ...c }));
                 const keep = new Set(folders.map(f => f.rootId).filter(Boolean));
                 forgetHandles([...rootHandles.keys()].filter(id => !keep.has(id)));
@@ -2559,6 +2564,7 @@ const defaultCategories = [
                 const fById = new Map(folders.map(f => [f.id, f]));
                 imp.folders.forEach(f => { if (fById.has(f.id)) folders[folders.indexOf(fById.get(f.id))] = f; else folders.push(f); });
                 imp.categories.forEach(c => { const i = categories.findIndex(x => x.id === c.id); if (i >= 0) categories[i] = c; else categories.push(c); });
+                imp.albums.forEach(a => { const i = albums.findIndex(x => x.id === a.id); if (i >= 0) albums[i] = a; else albums.push(a); });
             }
             normalizeCategoryTree();
             currentParentId = null;
@@ -3784,6 +3790,7 @@ const defaultCategories = [
             if (item.local && item.type === 'image') add('fa-copy', 'სურათის კოპირება', fileActions.copyImage);
             if (item.local || item.type === 'image') add('fa-image', 'საქაღალდის ქავერად', () => setCoverFromGallery(false));
             if (folder.parentId && folders.some(f => f.id === folder.parentId)) add('fa-folder-tree', 'მშობელი საქაღალდის ქავერად', () => setCoverFromGallery(true));
+            add('fa-book-open', 'ალბომში დამატება…', () => window.albumAddItems && window.albumAddItems([{ f: folder, m: item }]));
             if (item.local) add('fa-floppy-disk', 'ასლის შენახვა…', fileActions.saveCopy);
             add('fa-share-nodes', 'გაზიარება…', fileActions.share);
 
@@ -3802,6 +3809,7 @@ const defaultCategories = [
         document.addEventListener('keydown', (e) => {
             const gm = document.getElementById('galleryModal');
             if (!gm || gm.classList.contains('hidden')) return;
+            if (document.getElementById('editModal') || document.getElementById('albPick')) return;      // photo editor / album picker own the keyboard
             const tagOpen = !document.getElementById('tagModal').classList.contains('hidden');
             if (e.key === 'Escape') {
                 e.preventDefault();

@@ -36,10 +36,11 @@
         const g = $('galleryModal');
         if (g && !g.classList.contains('hidden')) return;
         if (document.querySelector('.fixed.z-\\[80\\], .fixed.z-\\[90\\]')) return;
-        for (const id of ['exportModal', 'simModal', 'mapModal', 'tlModal']) {
+        for (const id of ['exportModal', 'simModal', 'mapModal', 'tlModal', 'albModal']) {
             if ($(id)) { e.preventDefault(); closePanel(id); return; }
         }
     });
+    window._ui = { panel, closePanel, closers, escH, closeSidebarMobile: () => closeSidebarMobile() };
     function closeSidebarMobile() {
         const sb = $('sidebar');
         if (sb && window.innerWidth < 768 && !sb.classList.contains('-translate-x-full')) sb.classList.add('-translate-x-full');
@@ -277,7 +278,7 @@
     /* ======================= MAP ======================= */
     let leafletP = null;
     const LEAFLET_SRC = [
-        ['assets/vendor/leaflet/leaflet.css?v=10', 'assets/vendor/leaflet/leaflet.js?v=10'],
+        ['assets/vendor/leaflet/leaflet.css?v=12', 'assets/vendor/leaflet/leaflet.js?v=12'],
         ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js'],
         ['https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js']
     ];
